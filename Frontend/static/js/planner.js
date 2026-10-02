@@ -1,19 +1,22 @@
 import {api, notice, element, setBusy} from './api.js';
-import {mapUrl} from './place-links.js?v=improvements-1';
-import {renderItinerary} from './itinerary.js?v=improvements-1';
+import {mapUrl} from './place-links.js?v=inline-maps-2';
+import {renderItinerary, renderStructuredItinerary} from './itinerary.js?v=structured-1';
+import {renderResearch} from './weather.js?v=weather-agents-1';
 const messages = document.querySelector('#messages');
 const planningForms = [document.querySelector('#plan-form'), document.querySelector('#chat-form'), document.querySelector('#save-form')];
 let busy = false;
 let lastRequest = '';
+let lastCollaboration = true;
 const retry = document.querySelector('#retry-plan');
-retry.addEventListener('click', () => { if (lastRequest) send(lastRequest); });
+retry.addEventListener('click', () => { if (lastRequest) send(lastRequest, lastCollaboration); });
 function render(data) {
   messages.replaceChildren();
   if (!data.messages.length) messages.append(element('p', 'Tell me where you want to go, and we’ll start exploring.', 'empty'));
   for (const message of data.messages) {
     const bubble = element('article', '', `message ${message.role}`);
     const content = element('div', '');
-    if (message.role === 'assistant') renderItinerary(content, message.content || '', message.places || []);
+    if (message.role === 'assistant' && message.itinerary) renderStructuredItinerary(content, message.itinerary);
+    else if (message.role === 'assistant') renderItinerary(content, message.content || '', message.places || []);
     else content.textContent = message.content || '';
     bubble.append(element('span', message.role === 'user' ? 'YOU' : 'EASYTRIP', 'eyebrow'), content);
     if (message.role === 'assistant' && ((message.places || []).length || (message.sources || []).length)) {
@@ -23,15 +26,19 @@ function render(data) {
       for (const source of message.sources || [{label:'OpenStreetMap place listings',url:'https://www.openstreetmap.org/copyright'}]) {
         // Only known reference domains may become source links.
         let url; try { url = new URL(source.url); } catch { continue; }
-        if (url.protocol !== 'https:' || !['www.openstreetmap.org','en.wikivoyage.org'].includes(url.hostname)) continue;
+        if (url.protocol !== 'https:' || !['www.openstreetmap.org','en.wikivoyage.org','open-meteo.com'].includes(url.hostname)) continue;
         const link = element('a', source.label); link.href = url.href;
         link.target = '_blank'; link.rel = 'noopener noreferrer'; sources.append(link);
       }
       bubble.append(sources);
     }
+    if (message.role === 'assistant') renderResearch(bubble, message);
     messages.append(bubble);
   }
-  messages.scrollTop = messages.scrollHeight;
+  // Keep the itinerary visible; weather and research details can be much longer.
+  const latest = messages.lastElementChild;
+  if (latest) messages.scrollTop += latest.getBoundingClientRect().top - messages.getBoundingClientRect().top;
+  document.querySelector('#map-shortcut').textContent = `Map links (${data.pois.length}) ↓`;
   const places = document.querySelector('#places'); places.replaceChildren();
   if (!data.pois.length) places.append(element('p', 'Places with map links will appear after a search.', 'muted'));
   data.pois.forEach((place, i) => {
@@ -45,10 +52,10 @@ function render(data) {
     link.target = '_blank'; link.rel = 'noopener noreferrer'; card.append(link); places.append(card);
   });
 }
-async function send(message) {
+async function send(message, collaborate = document.querySelector('#collaborate').checked) {
   if (busy) return false;
   busy = true; planningForms.forEach(form => setBusy(form, true)); document.querySelector('#reset').disabled = true;
-  lastRequest = message; retry.hidden = true;
+  lastRequest = message; lastCollaboration = collaborate; retry.hidden = true;
   messages.setAttribute('aria-busy', 'true');
   notice('Preparing your request… This can take a few minutes.');
   let done = false;
@@ -62,14 +69,14 @@ async function send(message) {
     } catch { /* Progress failure must not cancel the plan request. */ }
     finally { polling = false; }
   }, 1500);
-  try { render(await api('/chat', {message})); notice(''); return true; }
+  try { render(await api('/chat', {message, collaborate})); notice(''); return true; }
   catch (error) { notice(error.message, true); retry.hidden = false; return false; }
   finally { done = true; clearInterval(poll); messages.setAttribute('aria-busy', 'false'); busy = false; planningForms.forEach(form => setBusy(form, false)); document.querySelector('#reset').disabled = false; }
 }
 document.querySelector('#plan-form').addEventListener('submit', async event => {
   event.preventDefault();
   const destination = document.querySelector('#destination').value.trim();
-  const message = `Plan a ${document.querySelector('#days').value}-day trip to ${destination}. Pace: ${document.querySelector('#pace').value}. Getting around: ${document.querySelector('#transport').value}. Interests: ${document.querySelector('#interests').value || 'local highlights'}. Budget and preferences: ${document.querySelector('#budget').value || 'flexible'}.`;
+  const message = `Plan a ${document.querySelector('#days').value}-day trip to ${destination}. Start date: ${document.querySelector('#start-date').value || 'not set; weather is current outlook only'}. Pace: ${document.querySelector('#pace').value}. Getting around: ${document.querySelector('#transport').value}. Interests: ${document.querySelector('#interests').value || 'local highlights'}. Budget and preferences: ${document.querySelector('#budget').value || 'flexible'}. Food preferences and dietary needs: ${document.querySelector('#food-preferences').value.trim() || 'local food; no dietary restrictions specified'}. Include lunch and dinner near the sightseeing stops in each full day.`;
   if (await send(message)) document.querySelector('#trip-name').value = `${destination} adventure`.slice(0, 100);
 });
 document.querySelector('#chat-form').addEventListener('submit', async event => {

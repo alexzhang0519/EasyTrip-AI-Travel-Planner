@@ -5,7 +5,7 @@ from pathlib import Path
 from flask import Flask, jsonify, request
 from dotenv import load_dotenv
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[3]
 load_dotenv(ROOT / 'Backend' / '.env')
 
 def create_app(test_config=None):
@@ -16,8 +16,8 @@ def create_app(test_config=None):
                       SESSION_COOKIE_SAMESITE='Strict', STORAGE_DIR=ROOT / 'Backend/storage')
     if test_config:
         app.config.update(test_config)
-    from Backend.routes.pages import pages
-    from Backend.routes.api import api
+    from Backend.app.api.routes.pages import pages
+    from Backend.app.api.routes import api
     app.register_blueprint(pages)
     app.register_blueprint(api)
 
@@ -30,13 +30,7 @@ def create_app(test_config=None):
             if origin and origin != request.host_url.rstrip('/'):
                 return jsonify(error='Cross-site requests are not allowed.'), 403
 
-    @app.errorhandler(413)
-    def too_large(error):
-        return jsonify(error='This request is too large. Please shorten your message.'), 413
-
-    @app.errorhandler(500)
-    def failed(error):
-        if request.path.startswith('/api/'):
-            return jsonify(error='Something went wrong. Please retry.'), 500
-        return 'Something went wrong. Please retry.', 500
+    from Backend.app.middleware import request_id, error_handler
+    request_id.register(app)
+    error_handler.register(app)
     return app

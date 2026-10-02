@@ -2,51 +2,97 @@
 
 [Back to README](../README.md)
 
+The backend follows the reference architecture by responsibility. Flask remains the web framework, so existing Jinja pages, sessions, and URLs continue to work. LangGraph now manages collaboration. No paid map provider, image API, external agent hosting, or new database server was introduced.
+
 ```text
-EasyTrip/
-├── run.py                       Flask app entry point
-├── requirements*.txt            Runtime, optional RAG, development dependencies
-├── Backend/
-│   ├── .env.example              Blank configuration template
-│   ├── app.py                    App factory and request protections
-│   ├── routes/                   HTML pages and JSON API routes
-│   ├── Agent/                    Model loop, prompts, tool schemas
-│   ├── Services/                 Maps, RAG, sources, progress, conversations
-│   └── persistence.py            JSON trip snapshots and feedback
-├── Frontend/
-│   ├── templates/                Jinja page layouts
-│   └── static/
-│       ├── css/                  Responsive styling
-│       └── js/                   API helper and page-specific behavior
-├── docs/                         User, architecture, development, upload guides
-├── tests/                        Mocked Python tests and JS rendering checks
-└── .github/workflows/tests.yml   Continuous integration
+Backend/
+  .env.example                 Public configuration template
+  .env                         Local credentials (ignored)
+  storage/                     Existing SQLite + JSON files (ignored)
+  app/
+    api/
+      main.py                  Flask factory and same-origin write protections
+      routes/
+        chat.py                Dialogue and planning API
+        trip.py                Save/load/feedback and direct planning
+        map.py                 Free restaurant search
+        pages.py               Existing web pages
+        common.py              Shared request/storage helpers
+    agents/
+      dialogue_agent.py        Bounded conversation/context assembly
+      core.py                  Bounded model/tool loop
+      collaboration.py         Restricted specialists and planner synthesis
+      langchain_model.py       ChatOpenAI boundary and structured-output binding
+      prompts.py               Planning instructions
+      tools.py                 Allowed provider tools
+    graph/
+      state.py                 Typed workflow state
+      nodes.py                 Prepare, research, synthesize, validate nodes
+      workflow.py              LangGraph fan-out / join wiring
+    services/                  Maps, weather, source extraction, itinerary formatting
+    models/schemas.py          Pydantic request and itinerary models
+    rag/
+      base/                    Guide loading and embeddings
+      pre_data/                FAISS index construction
+      retriever/               Vector retrieval
+      chain/                   Bounded cached travel-guide retrieval
+    memory/
+      database.py              SQLite connection lifetime
+      conversations.py         Session conversation read/write
+      trips.py                 Saved snapshots and feedback
+      files.py                 Atomic JSON writes
+    middleware/
+      request_id.py            Request IDs on responses/errors
+      error_handler.py         Consistent, user-safe failures
 ```
 
-## Request flow
+The old `Backend/Agent/`, `Backend/Services/`, `Backend/routes/`, and `Backend/persistence.py` files are import shims for compatibility, not duplicate implementations. New work belongs in `Backend/app/`.
 
-The browser submits same-origin JSON to Flask. The backend validates it, rebuilds recent model context, runs the OpenAI tool loop, and stores the visible conversation in SQLite. Each assistant answer carries its own places and sources; these fields are stripped before sending history back to the model. Saving writes a new JSON snapshot including this metadata.
+## Planning flow
 
-City lookup uses Nominatim. Place and restaurant search use Overpass/OpenStreetMap. Tool-derived names, addresses, and city context create Google Maps search URLs; Google is not called as a backend API. RAG optionally fetches Wikivoyage text, embeds it through OpenAI, and retrieves passages with FAISS.
+```mermaid
+flowchart TD
+    U[Web form or chat] --> V[Validate request]
+    V --> C{Collaboration?}
+    C -->|Yes| P[Prepare graph state]
+    P --> R[Place researcher]
+    P --> W[Weather adviser]
+    R --> J[Join both reports]
+    W --> J
+    J --> S[Planner: structured output]
+    C -->|No| A[Single agent tools]
+    A --> S
+    S --> D[Validate days, activities, places]
+    D --> M[Build map links on server]
+    M --> DB[Save conversation and evidence]
+    DB --> UI[Render structured cards]
+```
 
-`place-links.js` safely builds map links. `itinerary.js` recognizes day and time-of-day headings without rendering model HTML. `planner.js` manages conversation, progress, retries, places, and saving. Other pages have separate controllers.
+Each activity has a time period, description, and optional place object with name/city/address. The server constructs Google Maps search URLs from place fields. New cards use these fields directly; old text plans use the legacy renderer. The assistant still has human-readable text for conversation history. Structured itineraries, places, weather, agent reports, and sources stay with their answer and are retained in snapshots.
 
-## API
+LangGraph checkpoints are not persisted: this short local workflow completes within one request. SQLite stores completed conversations. Interrupted requests preserve the last completed plan; they are retried rather than resumed from a graph checkpoint.
 
-| Endpoint | Purpose |
-| --- | --- |
-| GET `/api/status` | Configuration availability, not upstream health |
-| GET `/api/conversation` | Active session conversation |
-| GET `/api/planning-status` | Current session's planning step |
-| POST `/api/chat` | Generate or refine a plan |
-| POST `/api/conversation/reset` | Reset active conversation |
-| GET / POST `/api/trips` | List / save snapshots |
-| POST `/api/trips/<id>/load` | Restore a snapshot |
-| POST `/api/trips/<id>/feedback` | Record feedback |
-| POST `/api/restaurants` | Independent free restaurant search |
+## API compatibility
 
-Write requests require the `X-EasyTrip: 1` header and reject mismatched origins. A process lock serializes planning. Progress is held in a bounded, session-scoped in-memory store. This design is for one local server process, not multi-user production deployment.
+Existing `/api/chat`, `/api/conversation`, `/api/planning-status`, `/api/trips`, trip load/feedback, and `/api/restaurants` URLs are unchanged. `POST /api/trips/plan` accepts structured form fields and starts a fresh plan without previous chat history; on success it replaces the active conversation. Writes still require `X-EasyTrip: 1` and a matching origin.
 
-## Private runtime files
+All responses have `X-Request-ID`. JSON errors also include `request_id`. Credentials and runtime storage remain outside Git. The app is still intended for personal local use; there is no authentication or production deployment configuration.
 
-`Backend/.env` contains credentials. `Backend/storage/` contains personal conversations, trip snapshots, and feedback. Both are local-only and ignored by Git. No browser-side API key is required.
+## Retrieval and future extensions
+
+RAG currently uses vector retrieval over Wikivoyage, with at most 16 city indexes cached in memory. Loading, embeddings, indexing, retrieval, and orchestration are separated. BM25/RRF, SQLAlchemy, FastAPI, image search, and persistent graph checkpoints are future options, not installed features.
+
+
+### Integrated sightseeing and meals
+
+The main planner now researches restaurants with the same free OpenStreetMap
+service used by Find food. Both single-agent and collaborating-agent modes can
+call `search_restaurants` near researched sights. The Place researcher handles
+sightseeing and food together; no additional specialist or paid provider is added.
+Full-day plans request Lunch and Dinner activities with named Google Maps links.
+The main form has Food & dietary needs; the direct planning API accepts optional
+`food_preferences` (up to 300 characters). Saved plans retain meal activities.
+If evidence is missing, the assistant should keep an unnamed meal break and
+explain the gap. Dietary tags are incomplete: confirm restrictions, allergens and
+opening hours with the venue. Existing saved itineraries are not rewritten;
+generate a new plan or ask to add nearby meals to your current plan.

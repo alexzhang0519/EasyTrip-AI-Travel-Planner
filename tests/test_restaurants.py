@@ -1,8 +1,8 @@
 import pytest
 import requests
-from Backend.Services import restaurants as service
-from Backend.Services import geocoding
-from Backend.routes import api as routes
+from Backend.app.services import restaurants as service
+from Backend.app.services import geocoding
+from Backend.app.api.routes import map as routes
 from test_app import client, app, HEADERS
 
 @pytest.fixture(autouse=True)

@@ -14,7 +14,7 @@ python -m pytest -q
 node tests/test_frontend.mjs
 ```
 
-The Python suite currently has 31 tests. It covers SDK tool-call serialization, place context across city changes, save/load, source extraction, session-isolated progress, safe failures, restaurant behavior, and optional embeddings with mocked HTTP. JS checks cover name/context map links, ambiguous names, day sections, and safe text rendering. No real API key is needed for these checks.
+The Python suite covers the core app plus LangChain serialization, collaboration, and weather edge cases. It covers SDK tool-call serialization, place context across city changes, save/load, source extraction, session-isolated progress, safe failures, restaurant behavior, and optional embeddings with mocked HTTP. JS checks cover name/context map links, ambiguous names, day sections, and safe text rendering. No real API key is needed for these checks.
 
 ## Current implementation
 
@@ -47,3 +47,37 @@ The obsolete Streamlit prototype, original handoff notes, and accumulated backup
 The frontend flow was informed by a TravelMind reference project. No source-code license file was present in this EasyTrip folder or found in the available reference checkout during preparation. No license has been invented or applied. Confirm ownership and any upstream attribution/license requirements before choosing an open-source license or redistributing upstream code.
 
 OpenStreetMap data attribution remains visible in the app. Wikivoyage is an optional external guide source; retain source attribution and review its terms for broader reuse.
+
+## Weather / LangChain update
+
+Added optional collaborating specialists, the LangChain OpenAI adapter, forecast service, trip dates, and weather/research cards. Use a real isolated `.venv`: global packages (notably multiple OpenMP runtimes from torch and FAISS) can crash optional RAG tests. See [implementation and provider limits](WEATHER_AND_AGENTS.md).
+
+Map-link discoverability: the planner now has a top-level Map links shortcut with the result count, and new replies scroll to the start of the itinerary rather than past it to weather/research notes.
+
+Inline Maps: structured responses provide named place objects; the server and frontend build Google Maps search links. Legacy Markdown links remain supported. The renderer safely supports only Google Maps search URLs and retains automatic links for tool-returned names. Search links do not certify a venue or recommendation. Weather reports must not supply unverified venue recommendations to the coordinator.
+
+
+## Architecture migration
+
+Canonical backend code now lives under `Backend/app/`; see [architecture](ARCHITECTURE.md). Legacy imports are shims. Existing `.env`, SQLite table, and JSON snapshots remain at their original locations. No user data migration is required. JSON writes are now atomic.
+
+Planner responses use native structured output and Pydantic validation. Older saved answers remain supported. Invalid structured output returns an error before overwriting the active conversation. The collaborating workflow uses LangGraph's parallel branches and explicit join; each specialist still has four model turns and synthesis one. Single-agent planning may use one additional final-formatting call after research (at most eleven model requests, excluding SDK retries).
+
+No API key, saved data, or existing uncommitted change was discarded. Source backups are in the ignored `.backup-before-architecture/` folder. The temporary import shims can be removed in a later compatibility-breaking release after consumers migrate.
+
+Current verification: 80 Python tests pass, including real LangGraph execution, structured-output SDK serialization, structured snapshot save/load, fresh direct plans, and request-ID errors. Frontend checks cover structured place links independently of description text and literal rendering of HTML-like strings. Dependency validation passes. No live paid planning request was used for this refactor.
+
+
+### Integrated sightseeing and meals
+
+The main planner now researches restaurants with the same free OpenStreetMap
+service used by Find food. Both single-agent and collaborating-agent modes can
+call `search_restaurants` near researched sights. The Place researcher handles
+sightseeing and food together; no additional specialist or paid provider is added.
+Full-day plans request Lunch and Dinner activities with named Google Maps links.
+The main form has Food & dietary needs; the direct planning API accepts optional
+`food_preferences` (up to 300 characters). Saved plans retain meal activities.
+If evidence is missing, the assistant should keep an unnamed meal break and
+explain the gap. Dietary tags are incomplete: confirm restrictions, allergens and
+opening hours with the venue. Existing saved itineraries are not rewritten;
+generate a new plan or ask to add nearby meals to your current plan.

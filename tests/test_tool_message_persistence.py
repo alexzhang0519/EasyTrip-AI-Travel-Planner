@@ -1,7 +1,7 @@
 import json
 from openai.types.chat import ChatCompletionMessage
-from Backend import persistence
-from Backend.routes import api as routes
+from Backend.app.memory import trips as persistence
+from Backend.app.api.routes import chat as routes
 from test_app import app, client, HEADERS
 
 

@@ -31,15 +31,35 @@ export function placeSegments(text, places = []) {
   if (start < text.length) segments.push({text: text.slice(start)});
   return segments;
 }
+// Render only Google Maps search links; all other Markdown/HTML stays literal.
+export function linkedSegments(text, places = []) {
+  const output = [];
+  const pattern = /\[([^\]\n]+)\]\((https:\/\/[^\s)]+)\)/g;
+  let start = 0;
+  for (const match of text.matchAll(pattern)) {
+    let url;
+    try { url = new URL(match[2]); } catch { continue; }
+    if (url.origin !== 'https://www.google.com' || url.pathname !== '/maps/search/' ||
+        url.username || url.password || url.searchParams.get('api') !== '1' || !url.searchParams.get('query')) continue;
+    output.push(...placeSegments(text.slice(start, match.index), places));
+    // Rebuild with only supported search parameters; never preserve redirects.
+    const query = url.searchParams.get('query');
+    const safeQuery = query.toLocaleLowerCase().includes(match[1].toLocaleLowerCase()) ? query : match[1];
+    output.push({text: match[1], url: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(safeQuery)}`});
+    start = match.index + match[0].length;
+  }
+  output.push(...placeSegments(text.slice(start), places));
+  return output;
+}
 export function renderPlaceText(container, text, places) {
-  for (const segment of placeSegments(text, places)) {
+  for (const segment of linkedSegments(text, places)) {
     if (!segment.url) { container.append(document.createTextNode(segment.text)); continue; }
     const link = document.createElement('a');
     link.textContent = segment.text;
     link.href = segment.url;
     link.className = 'itinerary-place-link';
     link.target = '_blank'; link.rel = 'noopener noreferrer';
-    link.title = `Open ${segment.text} in Google Maps (new tab)`;
+    link.title = `Search for ${segment.text} in Google Maps (new tab)`;
     container.append(link);
   }
 }

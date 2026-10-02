@@ -1,8 +1,8 @@
 import json
-from Backend.routes import api as routes
-from Backend.Services import progress
-from Backend.Services.places import extract_pois
-from Backend.Services.plan_sources import collect_sources
+from Backend.app.api.routes import chat as routes
+from Backend.app.services import progress
+from Backend.app.services.places import extract_pois
+from Backend.app.services.plan_sources import collect_sources
 from test_app import app, client, HEADERS
 
 

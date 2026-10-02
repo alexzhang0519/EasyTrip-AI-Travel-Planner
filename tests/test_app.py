@@ -1,8 +1,8 @@
 import json
 import pytest
 from Backend.app import create_app
-from Backend import persistence
-from Backend.routes import api as routes
+from Backend.app.memory import trips as persistence
+from Backend.app.api.routes import chat as routes, map as map_routes
 
 HEADERS = {'X-EasyTrip': '1'}
 
@@ -64,8 +64,8 @@ def test_chat_save_load_feedback_and_isolation(client, app, monkeypatch):
     assert client.post('/api/trips/secret.env/load', json={}, headers=HEADERS).status_code == 400
 
 def test_restaurants_do_not_enter_conversation(client, monkeypatch):
-    monkeypatch.setattr(routes, 'geocode_city', lambda city: {'lat': 35, 'lon': 135})
-    monkeypatch.setattr(routes, 'search_restaurants', lambda *args, **kwargs: [{'name': 'Cafe', 'source': 'openstreetmap'}])
+    monkeypatch.setattr(map_routes, 'geocode_city', lambda city: {'lat': 35, 'lon': 135})
+    monkeypatch.setattr(map_routes, 'search_restaurants', lambda *args, **kwargs: [{'name': 'Cafe', 'source': 'openstreetmap'}])
     assert client.post('/api/restaurants', json={'city': 'Kyoto'}, headers=HEADERS).json['restaurants'][0]['name'] == 'Cafe'
     assert client.get('/api/conversation').json == {'messages': [], 'pois': []}
 

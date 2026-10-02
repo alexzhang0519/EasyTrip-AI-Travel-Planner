@@ -2,3 +2,6 @@ Flask>=3.1,<4
 openai>=1.66,<3
 python-dotenv>=1,<2
 requests>=2.32,<3
+langchain-openai>=1,<2
+langgraph>=1,<2
+pydantic>=2.7,<3

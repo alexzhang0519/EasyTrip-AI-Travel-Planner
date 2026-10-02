@@ -4,10 +4,13 @@ A personal AI travel planner with a clean, responsive web interface. Plan a trip
 
 ## Features
 
-- Day-by-day itineraries with pace, interests, budget, and transport preferences.
+- Optional collaborating place researcher, weather adviser, and coordinating planner powered by LangChain.
+- Free personal-use Open-Meteo weather with travel dates and forecast coverage warnings.
+- Validated structured itineraries and a LangGraph research workflow.
+- Day-by-day sightseeing and meal plans with pace, interests, budget, transport, and dietary preferences.
 - Clickable Google Maps searches using place names and available address/city context.
 - Separate location snapshots for each answer, retained when saving and reopening trips.
-- Free restaurant search using OpenStreetMap community data.
+- Free OpenStreetMap restaurant search integrated into lunch and dinner planning, plus a standalone food search page.
 - Planning progress, recoverable errors, and source notes.
 - Optional Wikivoyage retrieval using OpenAI embeddings and local FAISS search.
 
@@ -48,9 +51,34 @@ Optional RAG dependencies:
 python -m pip install -r requirements-rag.txt
 ```
 
+## Project layout
+
+```text
+Backend/
+  .env.example       # Blank configuration template; keep your .env local
+  app/
+    api/             # Flask application and routes
+    agents/          # Planner and research specialists
+    graph/           # LangGraph orchestration
+    services/        # Places, food, weather, and itinerary formatting
+    rag/             # Optional travel-guide retrieval
+    memory/          # Conversation and saved-trip persistence
+    models/          # Validated requests and structured plans
+    middleware/      # Request IDs and error handling
+Frontend/
+  templates/         # Page layouts
+  static/            # CSS and JavaScript
+docs/               # Guides and interactive workflow
+tests/              # Network-mocked backend and frontend checks
+```
+
+Older backend import paths remain as small compatibility shims. Runtime data,
+credentials, environments, and local backups are excluded from Git.
+
 ## Documentation
 
 - [User guide](docs/USER_GUIDE.md): planning, map links, saving, and troubleshooting.
+- [Weather and agents](docs/WEATHER_AND_AGENTS.md): setup, costs, forecast limits, and team behavior.
 - [Architecture](docs/ARCHITECTURE.md): project structure and data flow.
 - [Development](docs/DEVELOPMENT.md): tests, implementation notes, and current limitations.
 - [GitHub upload guide](docs/GITHUB.md): prepare and publish a clean repository.

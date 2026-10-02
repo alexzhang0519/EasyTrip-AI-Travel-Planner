@@ -16,6 +16,8 @@ def create_app(test_config=None):
                       SESSION_COOKIE_SAMESITE='Strict', STORAGE_DIR=ROOT / 'Backend/storage')
     if test_config:
         app.config.update(test_config)
+    from Backend.app.memory.drafts import DraftStore
+    app.extensions['draft_store'] = DraftStore()
     from Backend.app.api.routes.pages import pages
     from Backend.app.api.routes import api
     app.register_blueprint(pages)

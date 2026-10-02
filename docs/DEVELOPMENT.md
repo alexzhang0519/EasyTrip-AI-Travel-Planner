@@ -65,7 +65,7 @@ Planner responses use native structured output and Pydantic validation. Older sa
 
 No API key, saved data, or existing uncommitted change was discarded. Source backups are in the ignored `.backup-before-architecture/` folder. The temporary import shims can be removed in a later compatibility-breaking release after consumers migrate.
 
-Current verification: 80 Python tests pass, including real LangGraph execution, structured-output SDK serialization, structured snapshot save/load, fresh direct plans, and request-ID errors. Frontend checks cover structured place links independently of description text and literal rendering of HTML-like strings. Dependency validation passes. No live paid planning request was used for this refactor.
+Current verification: 91 Python tests pass, including real LangGraph execution, structured-output SDK serialization, structured snapshot save/load, fresh direct plans, and request-ID errors. Frontend checks cover structured place links independently of description text and literal rendering of HTML-like strings. Dependency validation passes. No live paid planning request was used for this refactor.
 
 
 ### Integrated sightseeing and meals
@@ -81,3 +81,40 @@ If evidence is missing, the assistant should keep an unnamed meal break and
 explain the gap. Dietary tags are incomplete: confirm restrictions, allergens and
 opening hours with the venue. Existing saved itineraries are not rewritten;
 generate a new plan or ask to add nearby meals to your current plan.
+
+
+### Unsaved chats
+
+Each planner page has a unique in-memory draft identifier. New tabs and refreshes
+start empty; opening one tab cannot reset another tab's plan or prevent saving.
+Browser drafts stay in server memory, not SQLite. Save before navigating away
+or closing the planner. Saved trips → Open & continue loads a saved snapshot
+into a new draft. A trip name is optional in the UI (defaults to My trip).
+
+On page exit the browser sends a keepalive close request, which drops the draft
+content and blocks late AI writes. Browsers cannot guarantee delivery after a
+crash or network loss. Abandoned drafts expire after 30 minutes without activity,
+with cleanup running every minute, and all drafts disappear on server restart.
+Visible planner pages refresh their draft lifetime every minute. Switching to
+a Maps tab does not delete the original planner; opening another planner gets
+an independent empty draft. Saved JSON trips persist until explicitly deleted.
+Legacy API clients without a draft header retain cookie-scoped SQLite behavior.
+
+### Saving and deleting trips
+
+Generate a plan, enter a trip name, and select **Save trip**. In **Saved trips**,
+use **Open & continue** to restore it, or **Delete trip** and confirm to remove
+that saved snapshot and its feedback permanently. Other saved trips are kept.
+Deleting a snapshot does not clear an already open working chat; reopening the
+planner clears that draft as described above. The protected deletion endpoint
+is `POST /api/trips/<trip_id>/delete`.
+
+
+### One conversation per trip
+
+Create trip starts fresh, while chat messages refine the current trip. Retrying
+a failed Create trip request keeps that fresh-trip behavior. A failed request
+preserves the previous draft. Saved trips contain the current trip and its
+follow-ups. Older snapshots containing multiple recognizable form submissions
+are opened from the latest trip request; their original files are not rewritten
+on load. Free-text trip boundaries in older snapshots cannot be inferred reliably.

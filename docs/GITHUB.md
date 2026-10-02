@@ -18,7 +18,7 @@ git diff --cached
 Review the changes, then commit and push:
 
 ```bash
-git commit -m "Add modular backend, weather agents, and integrated meal planning"
+git commit -m "Fix isolated trip drafts, saving, and deletion"
 git push -u origin main
 ```
 

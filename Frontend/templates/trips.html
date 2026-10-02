@@ -1,4 +1,4 @@
 {% extends 'base.html' %}
 {% block title %}Saved trips · EasyTrip{% endblock %}
 {% block content %}<section class="page-heading"><p class="eyebrow">YOUR COLLECTION</p><h1>Your saved trips.</h1><p>Pick up where you left off. Your saved trips stay on this computer.</p></section><div id="notice" class="notice" role="status" hidden></div><section id="trips" class="trip-grid" aria-label="Saved trips"><p>Loading your trips…</p></section>{% endblock %}
-{% block scripts %}<script type="module" src="{{ url_for('static', filename='js/trips.js') }}"></script>{% endblock %}
+{% block scripts %}<script type="module" src="{{ url_for('static', filename='js/trips.js', v='tab-drafts-1') }}"></script>{% endblock %}

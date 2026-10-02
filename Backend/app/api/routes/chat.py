@@ -30,21 +30,22 @@ def conversation():
 
 @api.get('/planning-status')
 def planning_status():
-    return jsonify(stage=progress.read(session.get('conversation_id')))
+    return jsonify(stage=progress.read(conversations.progress_key()))
 
 @api.post('/conversation/reset')
 def reset():
     with planning_lock:
-        conversations.write({'messages': [], 'pois': []})
+        conversations.clear()
     return jsonify(ok=True)
 
 @api.post('/chat')
 def chat():
     from Backend.app.models.schemas import ChatRequest
     body = ChatRequest.model_validate(payload())
-    return plan_message(body.message.strip(), body.collaborate)
+    return plan_message(body.message.strip(), body.collaborate, fresh=body.new_trip)
 
 def plan_message(message, collaborate=False, fresh=False):
+    trip_start = fresh
     if not message:
         raise ValueError('Message cannot be blank.')
     if not os.getenv('OPENAI_API_KEY', '').strip():
@@ -58,7 +59,7 @@ def plan_message(message, collaborate=False, fresh=False):
         from Backend.app.agents.dialogue_agent import build_messages
         messages = build_messages(previous, message, persistence.collect_feedback_notes())
         start = len(messages)
-        key = session['conversation_id']
+        key = conversations.progress_key()
         progress.update(key, 'Preparing your request…')
         token = progress.callback.set(lambda stage: progress.update(key, stage))
         try:
@@ -84,7 +85,21 @@ def plan_message(message, collaborate=False, fresh=False):
                 m['sources'] = collect_sources(evidence, current_places)
                 m['weather'] = weather_reports(evidence)
                 m['agents'] = agent_reports(serialized[start:])
-        data = {'messages': previous + [{'role': 'user', 'content': message}] + fresh, 'pois': current_places}
+        user_message = {'role': 'user', 'content': message}
+        if trip_start:
+            user_message['trip_start'] = True
+        data = {'messages': previous + [user_message] + fresh, 'pois': current_places}
         conversations.write(data)
     return jsonify(visible(data))
 
+
+
+@api.post('/conversation/start')
+def start_draft():
+    return jsonify(visible(conversations.start()))
+
+@api.post('/conversation/close')
+def close_draft():
+    # Do not wait for an in-flight AI call; a closed draft rejects later writes.
+    conversations.close()
+    return jsonify(ok=True)

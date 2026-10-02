@@ -1,20 +1,36 @@
-import {api, notice, element, setBusy} from './api.js';
+import {api, notice, element, setBusy} from './api.js?v=tab-drafts-1';
 const container = document.querySelector('#trips');
+function showEmpty() {
+  const empty = element('div', '', 'panel');
+  empty.append(element('h2', 'Your next adventure is still unwritten.'), element('p', 'Plan a trip with the assistant, then give it a name and save it.'));
+  const link = element('a', 'Plan your first trip ↗', 'button');
+  link.href = '/planner'; empty.append(link); container.append(empty);
+}
 try {
   const {trips} = await api('/trips'); container.replaceChildren();
-  if (!trips.length) {
-    const empty = element('div', '', 'panel'); empty.append(element('h2', 'Your next adventure is still unwritten.'), element('p', 'Plan a trip with the assistant, then give it a name and save it.'));
-    const link = element('a', 'Plan your first trip ↗', 'button'); link.href = '/planner'; empty.append(link); container.append(empty);
-  }
+  if (!trips.length) showEmpty();
   for (const trip of trips) {
     const card = element('article', '', 'panel'); card.append(element('p', 'SAVED ADVENTURE', 'eyebrow'), element('h2', trip.name), element('p', new Date(trip.saved_at).toLocaleString(), 'small'));
     const load = element('button', 'Open & continue ↗');
     load.addEventListener('click', async () => {
       load.disabled = true;
-      try { await api(`/trips/${encodeURIComponent(trip.id)}/load`, {}); location.href = '/planner'; }
+      try { location.href = `/planner?trip=${encodeURIComponent(trip.id)}`; }
       catch (error) { notice(error.message, true); load.disabled = false; }
     });
-    card.append(load);
+    const remove = element('button', 'Delete trip', 'secondary');
+    remove.type = 'button';
+    remove.addEventListener('click', async () => {
+      if (!confirm(`Delete “${trip.name}”? This removes the saved trip and its feedback. This cannot be undone.`)) return;
+      setBusy(card, true);
+      try {
+        await api(`/trips/${encodeURIComponent(trip.id)}/delete`, {});
+        card.remove();
+        if (!container.children.length) showEmpty();
+        notice('Saved trip deleted.');
+      } catch (error) { notice(error.message, true); }
+      finally { setBusy(card, false); }
+    });
+    card.append(load, remove);
     const form = element('form', '', 'feedback');
     const label = element('label', 'How was this trip?'); const input = element('textarea', ''); input.placeholder = 'What should the assistant keep in mind?'; input.maxLength = 1000; label.append(input); form.append(label);
     for (const [rating, caption] of [['up', 'Good trip'], ['down', 'Needs work']]) {

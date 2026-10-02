@@ -51,3 +51,89 @@ const section=structuredContainer.children.find(n=>n.tag==='section');
 assert.equal(section.children.find(n=>n.tag==='a').textContent,'City Museum');
 assert.equal(section.children.find(n=>n.tag==='p').textContent,'<img src=x onerror=alert(1)>');
 assert.equal(new URL(section.children.find(n=>n.tag==='a').href).searchParams.get('query'),'City Museum, Kyoto, Japan');
+
+// New visits discard drafts; explicit saved-trip entries load exactly once.
+const {openPlanner} = await import(moduleURL(readFileSync(new URL('planner-session.js', root), 'utf8')));
+const startupCalls = [];
+const fakeHistory = {replaceState(...args) { startupCalls.push(['history', ...args]); }};
+const savedData = {messages: [{role:'assistant', content:'Saved trip'}], pois: []};
+const startupApi = async (path, body) => { startupCalls.push([path, body]); return savedData; };
+assert.deepEqual(await openPlanner(startupApi, new URL('http://localhost/planner'), fakeHistory), {messages:[], pois:[]});
+assert.deepEqual(startupCalls, [['/conversation/start', {}]]);
+startupCalls.length = 0;
+assert.equal(await openPlanner(startupApi, new URL('http://localhost/planner?trip=saved.json&inspiration=Art'), fakeHistory), savedData);
+assert.deepEqual(startupCalls, [['/conversation/start', {}], ['/trips/saved.json/load', {}], ['history', null, '', '/planner?inspiration=Art']]);
+startupCalls.length = 0;
+await openPlanner(startupApi, new URL('http://localhost/planner?inspiration=Art'), fakeHistory);
+assert.deepEqual(startupCalls, [['/conversation/start', {}]]);
+await assert.rejects(openPlanner(async () => { throw new Error('Offline'); }, new URL('http://localhost/planner'), fakeHistory), /Offline/);
+console.log('Draft lifecycle checks passed: new visit, saved trip, refresh, and startup failure.');
+
+// Exercise actual saved-trip page handlers with a small DOM and mocked HTTP boundary.
+class TripNode {
+  constructor(tag, text = '') { this.tag = tag; this.textContent = text; this.children = []; this.handlers = {}; }
+  append(...nodes) { for (const node of nodes) { node.parent = this; this.children.push(node); } }
+  replaceChildren(...nodes) { this.children = []; this.append(...nodes); }
+  addEventListener(name, handler) { this.handlers[name] = handler; }
+  remove() { this.parent.children = this.parent.children.filter(node => node !== this); }
+}
+const tripContainer = new TripNode('section');
+const pageCalls = [];
+let failDelete = false;
+globalThis.__tripTest = {
+  api: async (path, body) => {
+    pageCalls.push([path, body]);
+    if (body === undefined) return {trips:[{id:'sample.json', name:'Kyoto', saved_at:'2026-10-02'}]};
+    if (failDelete) throw new Error('Deletion unavailable');
+    return {ok:true};
+  },
+  notice: () => {},
+  element: (tag, text) => new TripNode(tag, text),
+  setBusy: (node, busy) => { node.busy = busy; }
+};
+globalThis.document = {querySelector: () => tripContainer};
+const mockPageApi = moduleURL('export const {api, notice, element, setBusy} = globalThis.__tripTest;');
+await import(moduleURL(readFileSync(new URL('trips.js', root), 'utf8').replace('./api.js?v=tab-drafts-1', mockPageApi)));
+const tripCard = tripContainer.children[0];
+const deleteButton = tripCard.children.find(node => node.textContent === 'Delete trip');
+assert.ok(deleteButton);
+globalThis.confirm = () => false;
+await deleteButton.handlers.click();
+assert.equal(pageCalls.length, 1); // No mutation when confirmation is canceled.
+assert.equal(tripContainer.children[0], tripCard);
+globalThis.confirm = () => true;
+failDelete = true;
+await deleteButton.handlers.click();
+assert.equal(tripContainer.children[0], tripCard);
+assert.equal(tripCard.busy, false);
+failDelete = false;
+await deleteButton.handlers.click();
+assert.deepEqual(pageCalls.at(-1), ['/trips/sample.json/delete', {}]);
+assert.notEqual(tripContainer.children[0], tripCard);
+assert.equal(tripContainer.children[0].children[0].textContent, 'Your next adventure is still unwritten.');
+delete globalThis.__tripTest;
+console.log('Saved-trip deletion UI checks passed: cancel, failure, success, and empty list.');
+
+// The real API adapter uses a stable per-page ID and a keepalive close request.
+const fetchRequests = [];
+globalThis.fetch = async (url, options) => {
+  fetchRequests.push([url, options]);
+  return {ok: true, json: async () => ({ok:true})};
+};
+const apiSource = readFileSync(new URL('api.js', root), 'utf8');
+const firstPage = await import(moduleURL(apiSource + '\n// test page one'));
+const secondPage = await import(moduleURL(apiSource + '\n// test page two'));
+await firstPage.api('/conversation/start', {});
+await firstPage.api('/chat', {message:'Kyoto'});
+await firstPage.api('/trips', {name:'My trip'});
+await secondPage.api('/conversation/start', {});
+await firstPage.closeDraft();
+const pageId = fetchRequests[0][1].headers['X-EasyTrip-Draft'];
+assert.ok(pageId);
+assert.equal(fetchRequests[1][1].headers['X-EasyTrip-Draft'], pageId);
+assert.equal(fetchRequests[2][1].headers['X-EasyTrip-Draft'], pageId);
+assert.notEqual(fetchRequests[3][1].headers['X-EasyTrip-Draft'], pageId);
+assert.equal(fetchRequests[4][0], '/api/conversation/close');
+assert.equal(fetchRequests[4][1].headers['X-EasyTrip-Draft'], pageId);
+assert.equal(fetchRequests[4][1].keepalive, true);
+console.log('Tab API checks passed: isolated identity, save identity, and close cleanup.');

@@ -14,7 +14,7 @@ Backend/
       main.py                  Flask factory and same-origin write protections
       routes/
         chat.py                Dialogue and planning API
-        trip.py                Save/load/feedback and direct planning
+        trip.py                Save/load/delete/feedback and direct planning
         map.py                 Free restaurant search
         pages.py               Existing web pages
         common.py              Shared request/storage helpers
@@ -38,7 +38,9 @@ Backend/
       chain/                   Bounded cached travel-guide retrieval
     memory/
       database.py              SQLite connection lifetime
-      conversations.py         Session conversation read/write
+      conversations.py         Draft routing and legacy session compatibility
+      drafts.py                Expiring, per-page in-memory browser drafts
+      trip_scope.py            Saved-trip conversation boundaries
       trips.py                 Saved snapshots and feedback
       files.py                 Atomic JSON writes
     middleware/
@@ -70,13 +72,30 @@ flowchart TD
 
 Each activity has a time period, description, and optional place object with name/city/address. The server constructs Google Maps search URLs from place fields. New cards use these fields directly; old text plans use the legacy renderer. The assistant still has human-readable text for conversation history. Structured itineraries, places, weather, agent reports, and sources stay with their answer and are retained in snapshots.
 
-LangGraph checkpoints are not persisted: this short local workflow completes within one request. SQLite stores completed conversations. Interrupted requests preserve the last completed plan; they are retried rather than resumed from a graph checkpoint.
+LangGraph checkpoints are not persisted: this short local workflow completes within one request. Browser drafts stay in per-page server memory. SQLite is retained for legacy API clients without a draft header. Interrupted requests preserve the last completed plan; they are retried rather than resumed from a graph checkpoint.
 
 ## API compatibility
 
 Existing `/api/chat`, `/api/conversation`, `/api/planning-status`, `/api/trips`, trip load/feedback, and `/api/restaurants` URLs are unchanged. `POST /api/trips/plan` accepts structured form fields and starts a fresh plan without previous chat history; on success it replaces the active conversation. Writes still require `X-EasyTrip: 1` and a matching origin.
 
 All responses have `X-Request-ID`. JSON errors also include `request_id`. Credentials and runtime storage remain outside Git. The app is still intended for personal local use; there is no authentication or production deployment configuration.
+
+## Draft and saved-trip lifecycle
+
+The browser sends a fresh `X-EasyTrip-Draft` UUID on every planner page load.
+The backend combines it with the signed session identity to isolate tabs.
+`POST /api/conversation/start` initializes the draft; `POST /api/conversation/close`
+discards it and prevents late AI responses from restoring content. A keepalive
+close request runs on page exit. Abandoned drafts expire after 30 minutes of
+inactivity; a timer cleans them within the next minute. Drafts are not durable
+across server restarts. This in-memory design requires one server process.
+
+Create trip sends `new_trip: true` to `/api/chat`; chat follow-ups retain the
+current trip context. A failed new plan does not overwrite the previous draft.
+Explicit trip markers keep new snapshots scoped; recognizable old form boundaries
+filter legacy mixed snapshots on load without rewriting their source files.
+Saved JSON snapshots persist independently. `POST /api/trips/<id>/delete` removes
+one saved snapshot and its feedback after UI confirmation.
 
 ## Retrieval and future extensions
 

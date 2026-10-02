@@ -3,6 +3,7 @@ from pathlib import Path
 import json
 from datetime import datetime
 from .files import write_json
+from .trip_scope import current_trip_messages
 
 TRIPS_DIR = str(Path(__file__).resolve().parents[2] / "storage" / "itineraries")
 
@@ -24,6 +25,8 @@ def _clean_messages(messages: list) -> list:
             continue                       # skip pure tool-call messages (no text)
 
         item = {"role": role, "content": content}
+        if role == 'user' and isinstance(m, dict) and m.get('trip_start') is True:
+            item['trip_start'] = True
         if role == 'assistant' and isinstance(m, dict):
             for field in ('places', 'sources', 'weather', 'agents'):
                 if isinstance(m.get(field), list):
@@ -41,13 +44,13 @@ def save_trip(name: str, messages: list, pois: list) -> str:
     data = {
         "name": name,
         "saved_at": datetime.now().isoformat(timespec="seconds"),
-        "messages": _clean_messages(messages),
+        "messages": current_trip_messages(_clean_messages(messages)),
         "pois": pois,
     }
 
     # Build a safe filename from the trip name + a timestamp.
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
-    safe_name = "".join(c if c.isalnum() else "_" for c in name).strip("_")
+    safe_name = "".join(c if c.isalnum() else "_" for c in name).strip("_")[:40]
     path = os.path.join(TRIPS_DIR, f"{safe_name}_{stamp}.json")
 
     write_json(path, data)
@@ -86,7 +89,7 @@ def load_trip(path: str) -> dict:
         data = json.load(f)
     # Also normalize older files that already contain one or more system prompts.
     # Leave the file unchanged; callers add the current system prompt in memory.
-    data["messages"] = _clean_messages(data["messages"])
+    data["messages"] = current_trip_messages(_clean_messages(data["messages"]))
     return data
     
 def save_feedback(path: str, rating: str, comment: str = "") -> None:
@@ -111,3 +114,7 @@ def collect_feedback_notes() -> list[str]:
         if fb and fb.get("rating") == "down" and fb.get("comment"):
             notes.append(fb["comment"])
     return notes
+
+def delete_trip(path: str) -> None:
+    """Delete one validated saved snapshot, including its stored feedback."""
+    Path(path).unlink()

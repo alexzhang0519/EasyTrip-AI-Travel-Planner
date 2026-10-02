@@ -9,6 +9,7 @@ A personal AI travel planner with a clean, responsive web interface. Plan a trip
 - Validated structured itineraries and a LangGraph research workflow.
 - Day-by-day sightseeing and meal plans with pace, interests, budget, transport, and dietary preferences.
 - Clickable Google Maps searches using place names and available address/city context.
+- Independent trip conversations and per-tab drafts, with saved itineraries you can reopen or delete.
 - Separate location snapshots for each answer, retained when saving and reopening trips.
 - Free OpenStreetMap restaurant search integrated into lunch and dinner planning, plus a standalone food search page.
 - Planning progress, recoverable errors, and source notes.
@@ -96,7 +97,7 @@ Node.js 18+ is only needed for frontend tests, not to run the app. Tests mock ex
 
 ## Scope and data
 
-EasyTrip is a local, single-user prototype. It has no authentication or booking system and is not configured for public hosting. Saved trips and feedback are shared by browsers accessing the same local server. Conversations live in `Backend/storage/conversations.sqlite3`; saved trips live in `Backend/storage/itineraries/`. These files are excluded from Git.
+EasyTrip is a local, single-user prototype. It has no authentication or booking system and is not configured for public hosting. Saved trips and feedback are shared by browsers accessing the same local server. Browser drafts are temporary and isolated per planner page; save before closing or refreshing. Saved trips live in `Backend/storage/itineraries/`. Legacy API conversations use `Backend/storage/conversations.sqlite3`. Runtime files are excluded from Git.
 
 Plans and travel times are AI suggestions, not verified routes or schedules. Confirm venue hours, reservations, accessibility, and transport details before traveling. Public map services can be rate-limited or unavailable.
 

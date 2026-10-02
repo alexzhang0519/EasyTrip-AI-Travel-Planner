@@ -12,10 +12,11 @@ def trips():
 @api.post('/trips')
 def save():
     name = text_field(payload(), 'name', 100)
-    data = conversations.read()
-    if not any(m['role'] == 'assistant' for m in data['messages']):
-        raise ValueError('Plan a trip before saving it.')
-    path = persistence.save_trip(name, data['messages'], data['pois'])
+    with planning_lock:
+        data = conversations.read()
+        if not any(m['role'] == 'assistant' for m in data['messages']):
+            raise ValueError('Plan a trip before saving it.')
+        path = persistence.save_trip(name, data['messages'], data['pois'])
     return jsonify(id=Path(path).name, name=name), 201
 
 @api.post('/trips/<trip_id>/load')
@@ -48,3 +49,10 @@ def direct_plan():
                f'Pace: {data.pace}. Getting around: {data.transport}. Interests: {data.interests}. Budget and preferences: {data.preferences}. '
                f'Food preferences and dietary needs: {data.food_preferences}. Include lunch and dinner near the sightseeing stops in each full day.')
     return plan_message(message, data.collaborate, fresh=True)
+
+
+@api.post('/trips/<trip_id>/delete')
+def delete(trip_id):
+    with planning_lock:
+        persistence.delete_trip(trip_path(trip_id))
+    return jsonify(ok=True)

@@ -8,6 +8,7 @@ class StrictModel(BaseModel):
 class ChatRequest(StrictModel):
     message: str = Field(min_length=1, max_length=2000)
     collaborate: StrictBool = False
+    new_trip: StrictBool = False
 
 class TripRequest(StrictModel):
     destination: str = Field(min_length=1, max_length=150)

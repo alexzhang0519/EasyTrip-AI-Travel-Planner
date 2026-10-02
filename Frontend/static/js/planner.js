@@ -1,14 +1,20 @@
-import {api, notice, element, setBusy} from './api.js';
+import {api, notice, element, setBusy, closeDraft} from './api.js?v=tab-drafts-1';
+import {openPlanner} from './planner-session.js?v=tab-drafts-1';
 import {mapUrl} from './place-links.js?v=inline-maps-2';
 import {renderItinerary, renderStructuredItinerary} from './itinerary.js?v=structured-1';
 import {renderResearch} from './weather.js?v=weather-agents-1';
 const messages = document.querySelector('#messages');
 const planningForms = [document.querySelector('#plan-form'), document.querySelector('#chat-form'), document.querySelector('#save-form')];
 let busy = false;
+let ready = false;
+window.addEventListener('pagehide', () => { ready = false; closeDraft(); });
+planningForms.forEach(form => setBusy(form, true));
+document.querySelector('#reset').disabled = true;
 let lastRequest = '';
 let lastCollaboration = true;
+let lastNewTrip = false;
 const retry = document.querySelector('#retry-plan');
-retry.addEventListener('click', () => { if (lastRequest) send(lastRequest, lastCollaboration); });
+retry.addEventListener('click', () => { if (lastRequest) send(lastRequest, lastCollaboration, lastNewTrip); });
 function render(data) {
   messages.replaceChildren();
   if (!data.messages.length) messages.append(element('p', 'Tell me where you want to go, and we’ll start exploring.', 'empty'));
@@ -52,10 +58,10 @@ function render(data) {
     link.target = '_blank'; link.rel = 'noopener noreferrer'; card.append(link); places.append(card);
   });
 }
-async function send(message, collaborate = document.querySelector('#collaborate').checked) {
-  if (busy) return false;
+async function send(message, collaborate = document.querySelector('#collaborate').checked, newTrip = false) {
+  if (!ready || busy) return false;
   busy = true; planningForms.forEach(form => setBusy(form, true)); document.querySelector('#reset').disabled = true;
-  lastRequest = message; lastCollaboration = collaborate; retry.hidden = true;
+  lastRequest = message; lastCollaboration = collaborate; lastNewTrip = newTrip; retry.hidden = true;
   messages.setAttribute('aria-busy', 'true');
   notice('Preparing your request… This can take a few minutes.');
   let done = false;
@@ -69,7 +75,7 @@ async function send(message, collaborate = document.querySelector('#collaborate'
     } catch { /* Progress failure must not cancel the plan request. */ }
     finally { polling = false; }
   }, 1500);
-  try { render(await api('/chat', {message, collaborate})); notice(''); return true; }
+  try { render(await api('/chat', {message, collaborate, new_trip: newTrip})); notice(''); return true; }
   catch (error) { notice(error.message, true); retry.hidden = false; return false; }
   finally { done = true; clearInterval(poll); messages.setAttribute('aria-busy', 'false'); busy = false; planningForms.forEach(form => setBusy(form, false)); document.querySelector('#reset').disabled = false; }
 }
@@ -77,25 +83,28 @@ document.querySelector('#plan-form').addEventListener('submit', async event => {
   event.preventDefault();
   const destination = document.querySelector('#destination').value.trim();
   const message = `Plan a ${document.querySelector('#days').value}-day trip to ${destination}. Start date: ${document.querySelector('#start-date').value || 'not set; weather is current outlook only'}. Pace: ${document.querySelector('#pace').value}. Getting around: ${document.querySelector('#transport').value}. Interests: ${document.querySelector('#interests').value || 'local highlights'}. Budget and preferences: ${document.querySelector('#budget').value || 'flexible'}. Food preferences and dietary needs: ${document.querySelector('#food-preferences').value.trim() || 'local food; no dietary restrictions specified'}. Include lunch and dinner near the sightseeing stops in each full day.`;
-  if (await send(message)) document.querySelector('#trip-name').value = `${destination} adventure`.slice(0, 100);
+  if (await send(message, undefined, true)) document.querySelector('#trip-name').value = `${destination} adventure`.slice(0, 100);
 });
 document.querySelector('#chat-form').addEventListener('submit', async event => {
   event.preventDefault(); const input = document.querySelector('#message'); const message = input.value.trim();
   if (message && await send(message)) input.value = '';
 });
 document.querySelector('#save-form').addEventListener('submit', async event => {
-  event.preventDefault(); setBusy(event.currentTarget, true);
-  try { await api('/trips', {name: document.querySelector('#trip-name').value}); notice('Trip saved. Find it in Saved trips.'); }
+  event.preventDefault(); if (!ready || busy) return; setBusy(event.currentTarget, true);
+  try { await api('/trips', {name: document.querySelector('#trip-name').value.trim() || 'My trip'}); notice('Trip saved. Find it in Saved trips.'); }
   catch (error) { notice(error.message, true); }
   finally { setBusy(document.querySelector('#save-form'), false); }
 });
 document.querySelector('#reset').addEventListener('click', async () => {
-  if (busy || !confirm('Start fresh? Save your current trip first if you want to keep it.')) return;
+  if (!ready || busy || !confirm('Start fresh? Save your current trip first if you want to keep it.')) return;
   try { await api('/conversation/reset', {}); render({messages: [], pois: []}); notice('Ready for a new adventure.'); }
   catch (error) { notice(error.message, true); }
 });
 try {
-  render(await api('/conversation'));
+  render(await openPlanner(api, new URL(window.location.href), window.history));
+  ready = true;
+  planningForms.forEach(form => setBusy(form, false));
+  document.querySelector('#reset').disabled = false;
   const status = await api('/status');
   if (!status.ai_ready) notice('One-time setup: add OPENAI_API_KEY to Backend/.env and restart EasyTrip. See README.md for steps.');
 } catch (error) { notice(error.message, true); }
@@ -105,3 +114,14 @@ const inspiration = new URLSearchParams(window.location.search).get('inspiration
 if (['Slow days', 'City walks', 'Good food', 'Fresh air', 'Art & culture'].includes(inspiration)) {
   document.querySelector('#interests').value = inspiration;
 }
+
+// Back/forward cache can restore a page without rerunning its module.
+window.addEventListener('pageshow', event => {
+  if (event.persisted) window.location.reload();
+});
+
+setInterval(() => {
+  if (ready && document.visibilityState === 'visible') {
+    api('/conversation').catch(error => { ready = false; notice(error.message, true); });
+  }
+}, 60000);

@@ -1,0 +1,34 @@
+# Private configuration (keep only blank example templates)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Local runtime data and personal trips
+Backend/storage/
+*.sqlite
+*.sqlite3
+*.sqlite3-*
+*.db
+*.log
+
+# Environments and generated files
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+node_modules/
+dist/
+build/
+*.egg-info/
+
+# Local archives, editor state, macOS files
+.backup*/
+*local-archive*/
+.DS_Store
+.vscode/
+.idea/
